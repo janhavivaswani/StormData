@@ -1,0 +1,118 @@
+---
+title: "Severity of weather events on public health and economy"
+output: html_document  
+---
+library(R.utils)
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+##Sypnosis
+Sypnosis: Using the storm database collected from the U.S. National Oceanic and Atmospheric Administration's (NOAA),from 1950 and end in November 2011,we aim to analyze the impact these different weather events have had on
+the public health and properties.
+
+##Data Processing- reading data and then analyzing
+fileUrl <- "file:///Users/janhavivaswani/Desktop/Coursera/c2/StormData.csv.bz2"
+download.file(fileUrl, destfile = "StormData.csv.bz2", method = "curl", na.rm = TRUE)
+list.files("./StormData.csv.bz2")
+options(max.print = .Machine$integer.max)
+
+storm0 <- read.csv("file:///Users/janhavivaswani/Desktop/Coursera/c2/repdata_data_StormData.csv")
+message(nrow(storm0), " observations and ", ncol(storm0), " fields")
+names(storm0)
+
+#social
+storm <- subset(storm0, FATALITIES > 0 | INJURIES > 0 | PROPDMG > 0 | CROPDMG > 0, select = c(8, 23:28))
+message(nrow(storm), " selected observations and ", ncol(storm), " fields")
+str(storm)
+
+fatalities <- aggregate(FATALITIES ~ EVTYPE, data = storm, sum, na.rm = TRUE)
+names(fatalities) <- c("EVENT_TYPE", "FATALITIES")
+fatalities <- fatalities[order(-fatalities$FATALITIES), ]
+fatalities[1:15, ]
+
+injuries <- aggregate(INJURIES ~ EVTYPE, data = storm, sum, na.rm = TRUE)
+names(injuries) = c("EVENT_TYPE", "INJURIES")
+injuries = injuries[order(-injuries$INJURIES), ]
+injuries[1:15, ]
+
+impactHealth <- aggregate(FATALITIES + INJURIES ~ EVTYPE, data = storm, sum, na.rm = TRUE)
+names(impactHealth) <- c("EVENT_TYPE", "FATALITIES.AND.INJURIES")
+impactHealth = impactHealth[order(-impactHealth$FATALITIES.AND.INJURIES), ]
+
+#merge the data for future use in results section
+casualties0 <- merge(fatalities, injuries)
+casualties <- merge(casualties0,impactHealth)
+casualties <- casualties[order(-casualties$FATALITIES.AND.INJURIES), ]
+
+print(impactHealth)
+print(casualties)
+
+#economical 
+expData <- storm[storm$PROPDMGEXP %in% c("", "K", "M", "B") & storm$CROPDMGEXP %in% c("", "K", "M", "B"), ]
+convExponent <- function(dmg, exp) {
+  if (exp == "K") {
+    dmg * 1000
+  } else if (exp == "M") {
+    dmg * 1e+06
+  } else if (exp == "B") {
+    dmg * 1e+09
+  } else if (exp == "") {
+    dmg
+  } else {
+    stop("NOT VALID DATA")
+  }
+}
+#crop damage
+expData$PROP_DMG <- mapply(convExponent, expData$PROPDMG, expData$PROPDMGEXP)
+expData$CROP_DMG <- mapply(convExponent, expData$CROPDMG, expData$CROPDMGEXP)
+crop <- aggregate(expData$CROP_DMG ~ EVTYPE, data = expData, sum, na.rm = TRUE)
+names(crop) <- c("EVENT_TYPE", "CROP_TOTAL_DMG")
+crop <- crop[order(-crop$CROP_TOTAL_DMG),]
+crop$cropMILLS <- crop$CROP_TOTAL_DMG/10^6
+crop[1:15,c(1,3)]
+print(crop)
+
+#property damage
+prop <- aggregate(expData$PROP_DMG ~ EVTYPE, data = expData, sum, na.rm = TRUE)
+names(prop) <- c("EVENT_TYPE", "PROP_TOTAL_DMG")
+prop <- prop[order(-prop$PROP_TOTAL_DMG),]
+prop$propMILLS <- prop$PROP_TOTAL_DMG/10^6
+prop[1:15,c(1,3)]
+print(prop)
+
+#eco damage
+economicDamage <- aggregate(expData$CROP_DMG + expData$PROP_DMG ~ 
+                              EVTYPE, data <- expData, sum, na.rm = TRUE)
+names(economicDamage) <- c("EVENT_TYPE", "CROP_PROP_TOTAL_DMG")
+economicDamage <- economicDamage[order(-economicDamage$CROP_PROP_TOTAL_DMG),]
+economicDamage$ECODMGMILLS <- economicDamage$CROP_PROP_TOTAL_DMG/10^6
+
+#merge data for future use in result section
+economic0 <- merge(crop,prop)
+economic <- merge(economic0,economicDamage)
+economic <- economic[order(-economic$CROP_PROP_TOTAL_DMG), ]
+print(economic)
+
+casualties[1:15, ]
+
+## Including Plots
+Results
+#1
+print("Results:")
+library(ggplot2)
+ggplot(impactHealth[1:15, ], aes(x = reorder(EVENT_TYPE, FATALITIES.AND.INJURIES), y = FATALITIES.AND.INJURIES)) + 
+  geom_bar(stat = "identity",fill="blue") + coord_flip() + 
+  labs(x = "Event types", y = "Fatalities & Injuries", title = "Top 15 Fatalities & Injuries" )
+print("The most harmful event to the population is a tornado, followed excessive heat, wind.")
+
+#2
+library(ggplot2)
+economic[1:15,c(1,3,5,7)]
+ggplot(economicDamage[1:15, ], aes(x = reorder(EVENT_TYPE, ECODMGMILLS), y = ECODMGMILLS)) + 
+  geom_bar(stat = "identity",fill="blue") + coord_flip() + labs(x = "Event types", y = "Crop & Property Damage (in Millions) ", 
+  title = "Top 15 Crop & Property Damages")
+print("The most harmful event to the economy is a flood, followed by a hurricane.")
+
+#Conclusion
+print("The most harmful event on the economy is a flood and the most harmful event to the population is a tornado.")
